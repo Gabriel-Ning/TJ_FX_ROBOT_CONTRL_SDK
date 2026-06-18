@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+context:
+  name: libmarvin
+  version: "0.1.0"
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  skip:
+    - not linux
+  script:
+    - cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_PREFIX_PATH=$PREFIX
+    - cmake --build build --parallel
+    - ctest --test-dir build --output-on-failure
+    - cmake --install build
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }}
+    - cmake >=3.16
+    - ninja
+  run:
+    - libgomp
+
+tests:
+  - script:
+      - test -f $PREFIX/lib/libMarvinSDK.so
+      - test -f $PREFIX/include/marvin/FxType.h
+      - test -f $PREFIX/include/marvin/FxRtCSDef.h
+      - test -f $PREFIX/lib/cmake/libmarvin/libmarvinConfig.cmake
+
+about:
+  homepage: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
+  repository: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
+  summary: Marvin robot control SDK (libMarvinSDK) for hardware interface integration
+  license: Apache-2.0
+  license_file: LICENSE

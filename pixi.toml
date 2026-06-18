@@ -1,0 +1,25 @@
+[workspace]
+name = "libmarvin"
+version = "0.1.0"
+description = "Pixi environment for building libmarvin (Marvin control SDK)"
+channels = ["conda-forge", "https://prefix.dev/robostack-jazzy"]
+platforms = ["linux-64"]
+
+[dependencies]
+cxx-compiler = "*"
+cmake = ">=3.16"
+ninja = "*"
+sysroot_linux-64 = ">=2.39"
+rattler-build = "*"
+
+[tasks]
+configure = "cmake -S . -B .pixi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PIXI_PROJECT_ROOT/.pixi/install"
+build = "cmake --build .pixi/build --parallel"
+install = "cmake --install .pixi/build"
+test = "ctest --test-dir .pixi/build --output-on-failure"
+clean = "rm -rf .pixi/build .pixi/install dist"
+version-check = "bash tools/check_versions.sh"
+conda-build = "bash tools/conda_build.sh"
+conda-upload = "bash tools/conda_upload.sh"
+conda-release = "bash tools/conda_release.sh"
+conda-smoke = { cmd = "bash tools/conda_smoke.sh", depends-on = ["conda-build"] }

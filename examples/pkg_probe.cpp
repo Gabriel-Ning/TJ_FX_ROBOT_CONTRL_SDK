@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <unistd.h>
 
 #include "MarvinSDK.h"
 
@@ -52,20 +53,32 @@ int main(int argc, char ** argv)
     return 1;
   }
 
-  // OnGetSDKVersion() uses m_InsRobot without GetIns(); connect first.
   if (!OnLinkTo(ip1, ip2, ip3, ip4))
   {
     std::fprintf(stderr, "OnLinkTo failed\n");
     return 1;
   }
 
+  usleep(200000);
   std::printf("sdk=%ld\n", OnGetSDKVersion());
+
+  OnClearSet();
+  OnClearErr_A();
+  OnClearErr_B();
+  OnSetSend();
+  usleep(100000);
 
   char key[30] = {};
   std::strncpy(key, "VERSION", sizeof(key) - 1);
   long version = -1;
   const long ret = OnGetIntPara(key, &version);
   std::printf("controller ret=%ld version=%ld\n", ret, version);
+
+  if (ret != 0)
+  {
+    OnRelease();
+    return 1;
+  }
 
   OnRelease();
   return 0;

@@ -22,7 +22,6 @@ macro(add_marvin_control_example target source)
   target_compile_definitions(${target} PRIVATE CMPL_LIN)
 endmacro()
 
-add_marvin_control_example(marvin_validate_sdk_type_compat sdk_type_compat.cpp)
 add_marvin_control_example(marvin_validate_link_readonly link_readonly.cpp)
 add_marvin_control_example(marvin_validate_pkg_probe pkg_probe.cpp)
 
@@ -33,8 +32,6 @@ set(MARVIN_CFG_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../DEMO_C++/ccs_m6_40.MvKDCfg")
 configure_file(${MARVIN_CFG_SRC} ${CMAKE_CURRENT_BINARY_DIR}/ccs_m6_40.MvKDCfg COPYONLY)
 
 if(BUILD_TESTING)
-  add_test(NAME marvin_validate_sdk_type_compat
-    COMMAND marvin_validate_sdk_type_compat)
   add_test(NAME marvin_validate_kine_ccs_m6_40
     COMMAND marvin_validate_kine_ccs_m6_40
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})

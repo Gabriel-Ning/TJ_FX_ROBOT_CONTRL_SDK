@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(libmarvin VERSION 0.2.0 LANGUAGES CXX)
+project(libmarvin VERSION 0.1.0 LANGUAGES CXX)
 
 if(POLICY CMP0087)
   cmake_policy(SET CMP0087 NEW)
@@ -18,19 +18,18 @@ endif()
 
 find_package(Threads REQUIRED)
 
-set(MARVIN_CONTROL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/contrlSDK100343")
+# hardware-1003 branch: 1003-line SDK pinned from tested/TJ_FX_ROBOT_CONTRL_SDK-master
+set(MARVIN_CONTROL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/contrlSDK")
 
 set(MARVIN_CONTROL_SOURCES
+  ${MARVIN_CONTROL_DIR}/MarvinSDK.cpp
+  ${MARVIN_CONTROL_DIR}/Robot.cpp
   ${MARVIN_CONTROL_DIR}/ACB.cpp
-  ${MARVIN_CONTROL_DIR}/CAxisSpPln.cpp
+  ${MARVIN_CONTROL_DIR}/FXDG.cpp
+  ${MARVIN_CONTROL_DIR}/PointSet.cpp
   ${MARVIN_CONTROL_DIR}/FileOP.cpp
   ${MARVIN_CONTROL_DIR}/FilePortal.cpp
-  ${MARVIN_CONTROL_DIR}/FXDG.cpp
-  ${MARVIN_CONTROL_DIR}/MarvinSDK.cpp
   ${MARVIN_CONTROL_DIR}/Parser.cpp
-  ${MARVIN_CONTROL_DIR}/PointSet.cpp
-  ${MARVIN_CONTROL_DIR}/Robot.cpp
-  ${MARVIN_CONTROL_DIR}/ShMem.cpp
   ${MARVIN_CONTROL_DIR}/TCPAgent.cpp
   ${MARVIN_CONTROL_DIR}/TCPFileClient.cpp
 )

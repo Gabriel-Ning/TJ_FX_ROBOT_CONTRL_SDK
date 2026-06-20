@@ -12,7 +12,7 @@ source:
   path: ..
 
 build:
-  number: 0
+  number: 1
   skip:
     - not linux
   script:
@@ -39,6 +39,6 @@ tests:
 about:
   homepage: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
   repository: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
-  summary: Marvin control SDK 1003 line for field hardware (libMarvinSDK, contrlSDK)
+  summary: Marvin control SDK 1003 line for field hardware (libmarvin 0.1.x, branch hardware-1003)
   license: Apache-2.0
   license_file: LICENSE

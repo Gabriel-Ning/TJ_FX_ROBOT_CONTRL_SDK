@@ -1,38 +1,40 @@
 # libmarvin branch strategy
 
-Two long-lived branches maintain different Marvin control SDK generations.
+Two long-lived branches publish **different conda versions** of the same package name (`libmarvin`) to [gabriel-robotics on prefix.dev](https://prefix.dev/gabriel-robotics). Only one version line is valid per controller generation — use semver to tell them apart.
 
-| Branch | SDK source | `SDK_VERSION` | Package version | Use when |
-|--------|------------|---------------|-----------------|----------|
-| `hardware-1003` | `contrlSDK/` | `1003` | `0.1.x` | **Current field hardware** on the 1003 protocol line (e.g. controller `VERSION=100391`). |
-| `master` | `contrlSDK100343/` | `100343007` | `0.2.x` | Controller firmware is **100343+** (new protocol). Track upstream updates here. |
+| Branch | SDK source | `SDK_VERSION` | **Conda version** | Publish from |
+|--------|------------|---------------|-------------------|--------------|
+| `hardware-1003` | `contrlSDK/` | `1003` | **`0.1.x` only** | `hardware-1003` branch only |
+| `master` | `contrlSDK100343/` | `100343007` | **`0.2.x` only** | `master` branch only |
 
-## `hardware-1003` (default for ros2 today)
-
-- `contrlSDK/` is the field-validated 1003-line SDK (formerly kept under a local `tested/` snapshot; that tree is now merged into `contrlSDK/` and removed).
-- Build and publish **`libmarvin` 0.1.x** from this branch only.
-- Validation: `pixi run validate-offline` and `pixi run validate-hardware` (robot IP via `MARVIN_IP` or default `10.19.0.191`).
+**Do not** publish `0.1.x` from `master` or `0.2.x` from `hardware-1003`. After clearing the channel, republish exactly one artifact per version line.
 
 ## ros2_workspace pinning
 
 ```toml
-# Field hardware (this branch)
+# Field hardware — 1003 protocol (hardware-1003 branch packages)
 libmarvin = ">=0.1.0,<0.2"
 
-# After controller upgrade to 100343+ (master branch packages)
+# Controllers on 100343+ protocol (master branch packages)
 libmarvin = ">=0.2.0,<0.3"
 ```
 
-## Refreshing `contrlSDK/` from vendor
-
-When vendor ships an updated 1003-line SDK, replace sources under `contrlSDK/` on `hardware-1003`, keeping the same 10-file build set as `contrlSDK/makefile`, then:
+Verify what you installed:
 
 ```bash
-git checkout hardware-1003
-pixi run build
-pixi run validate-offline
-pixi run validate-hardware   # optional, needs robot
-pixi run conda-build
+grep SDK_VERSION .pixi/envs/default/include/marvin/Robot.h
+# 1003      → correct for field hardware
+# 100343007 → 100343-line package (master / 0.2.x)
 ```
 
-See [LIBMARVIN.md](LIBMARVIN.md) for conda/pixi commands.
+## `hardware-1003`
+
+- Build and publish **`libmarvin=0.1.0`** only.
+- Validation: `pixi run validate-offline`, `pixi run validate-hardware`.
+
+## `master`
+
+- Build and publish **`libmarvin=0.2.0`** only.
+- For controllers upgraded to vendor **100343+** protocol.
+
+See [LIBMARVIN.md](LIBMARVIN.md) for build/upload commands.

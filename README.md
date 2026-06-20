@@ -1,9 +1,9 @@
 # 本项目为天机MARVIN系列机器人的开源仓库
 
-> **Branch `hardware-1003` (libmarvin field hardware)**  
-> This branch packages the validated **1003-line** control SDK in `contrlSDK/` as conda package **`libmarvin` 0.1.x** for ros2 and hardware integration.  
-> Build: `pixi run conda-build` · Docs: [docs/LIBMARVIN.md](docs/LIBMARVIN.md) · Branches: [docs/BRANCHES.md](docs/BRANCHES.md)  
-> For **100343+** controllers, use branch `master` and `libmarvin` 0.2.x instead.
+> **Branch `hardware-1003` (libmarvin 1003-line SDK)**  
+> Conda package **`libmarvin` 0.1.x only** from `contrlSDK/` — for current field hardware on the **1003** protocol.  
+> Docs: [docs/LIBMARVIN.md](docs/LIBMARVIN.md) · [docs/BRANCHES.md](docs/BRANCHES.md)  
+> **100343+** controllers: branch **`master`**, **`libmarvin` 0.2.x** ([prefix.dev/gabriel-robotics](https://prefix.dev/gabriel-robotics)).
 
 # 本文档包含:一、SDK简要说明，二、编译方法，三、SDK更新，四、控制器版本更新，五、APP更新，六、使用注意，七、机器人报错及处理措施
 

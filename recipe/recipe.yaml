@@ -12,7 +12,7 @@ source:
   path: ..
 
 build:
-  number: 2
+  number: 0
   skip:
     - not linux
   script:
@@ -35,10 +35,12 @@ tests:
       - test -f $PREFIX/include/marvin/FxType.h
       - test -f $PREFIX/include/marvin/FxRtCSDef.h
       - test -f $PREFIX/lib/cmake/libmarvin/libmarvinConfig.cmake
+      - grep -q 'SDK_VERSION   1003' $PREFIX/include/marvin/Robot.h
+      - grep -qv 100343007 $PREFIX/include/marvin/Robot.h
 
 about:
   homepage: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
   repository: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
-  summary: Marvin control SDK 1003 line for field hardware (libmarvin 0.1.x, branch hardware-1003)
+  summary: "libmarvin 0.1.0 — Marvin SDK 1003 line (publish only from hardware-1003 branch)"
   license: Apache-2.0
   license_file: LICENSE

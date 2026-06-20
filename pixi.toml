@@ -1,7 +1,7 @@
 [workspace]
 name = "libmarvin"
-version = "0.1.0"
-description = "Pixi environment for building libmarvin (Marvin control SDK)"
+version = "0.2.0"
+description = "Pixi environment for building libmarvin 100343-line SDK (contrlSDK100343)"
 channels = ["conda-forge", "https://prefix.dev/robostack-jazzy"]
 platforms = ["linux-64"]
 
@@ -17,6 +17,8 @@ configure = "cmake -S . -B .pixi/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMA
 build = "cmake --build .pixi/build --parallel"
 install = "cmake --install .pixi/build"
 test = "ctest --test-dir .pixi/build --output-on-failure"
+validate-offline = "ctest --test-dir .pixi/build --output-on-failure -R 'marvin_validate_sdk_type_compat|marvin_validate_kine_ccs_m6_40|libmarvin_smoke'"
+validate-hardware = "bash -c './.pixi/build/examples/marvin_validate_link_readonly && ./.pixi/build/examples/marvin_validate_pkg_probe'"
 clean = "rm -rf .pixi/build .pixi/install dist"
 version-check = "bash tools/check_versions.sh"
 conda-build = "bash tools/conda_build.sh"

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(libmarvin VERSION 0.1.0 LANGUAGES CXX)
+project(libmarvin VERSION 0.2.0 LANGUAGES CXX)
 
 if(POLICY CMP0087)
   cmake_policy(SET CMP0087 NEW)
@@ -59,6 +59,11 @@ if(BUILD_TESTING)
   add_executable(libmarvin_smoke tests/smoke.cpp)
   target_link_libraries(libmarvin_smoke PRIVATE ${PROJECT_NAME})
   add_test(NAME libmarvin_smoke COMMAND libmarvin_smoke)
+endif()
+
+option(BUILD_EXAMPLES "Build libmarvin validation examples" ON)
+if(BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()
 
 install(

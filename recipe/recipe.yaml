@@ -2,7 +2,7 @@
 
 context:
   name: libmarvin
-  version: "0.1.0"
+  version: "0.2.0"
 
 package:
   name: ${{ name }}
@@ -39,6 +39,6 @@ tests:
 about:
   homepage: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
   repository: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
-  summary: Marvin robot control SDK (libMarvinSDK) for hardware interface integration
+  summary: Marvin control SDK 100343 line (libMarvinSDK, contrlSDK100343)
   license: Apache-2.0
   license_file: LICENSE

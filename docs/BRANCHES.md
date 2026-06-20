@@ -1,29 +1,30 @@
 # libmarvin branch strategy
 
-Two long-lived branches maintain different Marvin control SDK generations.
+Two long-lived branches publish **different conda versions** of the same package name (`libmarvin`) to [gabriel-robotics on prefix.dev](https://prefix.dev/gabriel-robotics). Only one version line is valid per controller generation — use semver to tell them apart.
 
-| Branch | SDK source | `SDK_VERSION` | Package version | Use when |
-|--------|------------|---------------|-----------------|----------|
-| `master` | `contrlSDK100343/` | `100343007` | `0.2.x` | Controller firmware is **100343+** (new protocol). Track upstream updates here. |
-| `hardware-1003` | `contrlSDK/` (pinned to `tested/TJ_FX_ROBOT_CONTRL_SDK-master`) | `1003` | `0.1.x` | Current field hardware on the **1003** line (e.g. controller `VERSION=100391`). |
+| Branch | SDK source | `SDK_VERSION` | **Conda version** | Publish from |
+|--------|------------|---------------|-------------------|--------------|
+| `hardware-1003` | `contrlSDK/` | `1003` | **`0.1.x` only** | `hardware-1003` branch only |
+| `master` | `contrlSDK100343/` | `100343007` | **`0.2.x` only** | `master` branch only |
+
+**Do not** publish `0.1.x` from `master` or `0.2.x` from `hardware-1003`.
 
 ## ros2_workspace pinning
 
 ```toml
-# Field hardware (1003 line)
+# Field hardware — 1003 protocol (hardware-1003 branch packages)
 libmarvin = ">=0.1.0,<0.2"
 
-# After controller upgrade to 100343+
+# Controllers on 100343+ protocol (master branch packages)
 libmarvin = ">=0.2.0,<0.3"
 ```
 
-## Refresh hardware SDK snapshot
-
-When re-syncing from the tested vendor tree:
+Verify what you installed:
 
 ```bash
-git checkout hardware-1003
-rsync -a --exclude='*.so' --exclude='*.dll' \
-  tested/TJ_FX_ROBOT_CONTRL_SDK-master/contrlSDK/ contrlSDK/
-pixi run build && pixi run validate-offline
+grep SDK_VERSION .pixi/envs/default/include/marvin/Robot.h
+# 1003      → libmarvin 0.1.x (hardware-1003)
+# 100343007 → libmarvin 0.2.x (master)
 ```
+
+See [LIBMARVIN.md](LIBMARVIN.md) for build/upload commands on this branch.

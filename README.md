@@ -1,5 +1,10 @@
 # 本项目为天机MARVIN系列机器人的开源仓库
 
+> **Branch `master` (libmarvin 100343-line SDK)**  
+> Conda package **`libmarvin` 0.2.x** from `contrlSDK100343/` — for controllers on the **100343+** protocol.  
+> Docs: [docs/LIBMARVIN.md](docs/LIBMARVIN.md) · [docs/BRANCHES.md](docs/BRANCHES.md)  
+> Field hardware (1003 protocol): branch **`hardware-1003`**, **`libmarvin` 0.1.x**.
+
 # 本文档包含:一、SDK简要说明，二、编译方法，三、SDK更新，四、控制器版本更新，五、APP更新，六、使用注意，七、机器人报错及处理措施
 
 # ATTENTION

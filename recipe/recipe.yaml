@@ -35,10 +35,12 @@ tests:
       - test -f $PREFIX/include/marvin/FxType.h
       - test -f $PREFIX/include/marvin/FxRtCSDef.h
       - test -f $PREFIX/lib/cmake/libmarvin/libmarvinConfig.cmake
+      - grep -q 'SDK_VERSION 100343007' $PREFIX/include/marvin/Robot.h
+      - grep -qv 'SDK_VERSION   1003' $PREFIX/include/marvin/Robot.h
 
 about:
   homepage: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
   repository: https://github.com/Gabriel-Ning/TJ_FX_ROBOT_CONTRL_SDK
-  summary: Marvin control SDK 100343 line (libMarvinSDK, contrlSDK100343)
+  summary: "libmarvin 0.2.0 — Marvin SDK 100343 line (publish only from master branch)"
   license: Apache-2.0
   license_file: LICENSE

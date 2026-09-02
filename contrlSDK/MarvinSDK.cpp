@@ -238,6 +238,10 @@ long OnGetSDKVersion()
 {
 	return CRobot::OnGetSDKVersion();
 }
+bool OnGetIoStats(MarvinIoStats* stats)
+{
+	return CRobot::OnGetIoStats(stats);
+}
 bool OnSendFile(char* local_file, char* remote_file)
 {
 	return CRobot::OnSendFile(local_file, remote_file);

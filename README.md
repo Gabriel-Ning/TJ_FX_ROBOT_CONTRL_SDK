@@ -42,13 +42,37 @@ grep SDK_VERSION .pixi/envs/default/include/marvin/Robot.h   # 应为 1003
 本分支 **只发布** `libmarvin` **0.1.x**。不要在 `hardware-1003` 上发布 0.2.x。
 
 ```bash
-pixi run version-check          # CMake / pixi / recipe 均为 0.1.0
-pixi run conda-build            # → dist/linux-64/libmarvin-0.1.0-*.conda
+pixi run version-check          # CMake / pixi / recipe 均为 0.1.1
+pixi run conda-build            # → dist/linux-64/libmarvin-0.1.1-*.conda
 pixi run conda-smoke            # 本地 consumer 测试
 pixi run conda-upload           # 上传到 gabriel-robotics
 ```
 
 CMake 编译与 vendor `contrlSDK/makefile` 相同的 10 个源文件，输出 `libMarvinSDK.so`，导入目标为 `libmarvin::libmarvin`。
+
+---
+
+## Linux real-time I/O
+
+The hardware-1003 SDK uses independent joinable TX and RX threads. TX runs on a
+1 ms absolute `CLOCK_MONOTONIC` schedule and owns a non-blocking UDP socket; RX
+cannot delay command transmission. `OnSetSend()` publishes a complete frame
+into a fixed mailbox. If the producer gets ahead, TX sends the newest frame and
+drops stale queued targets instead of blocking the control loop or replaying a
+burst. Transient `EAGAIN`/`ENOBUFS` results keep the newest frame pending for a
+later retry.
+
+Optional process environment variables configure the TX thread:
+
+```bash
+export MARVIN_IO_CPU=3
+export MARVIN_IO_RT_PRIORITY=80
+```
+
+Setting `SCHED_FIFO` requires the corresponding real-time permission. Keep the
+SDK I/O priority below the controller-manager update thread. `OnGetIoStats()`
+reports ticks, missed deadlines, maximum lateness, published/overwritten frames,
+UDP send results, TX/RX work time, and the effective TX scheduling policy.
 
 ---
 
@@ -84,9 +108,10 @@ DEMO_C++/           # vendor 示例（需自行改 IP / 链接 libMarvinSDK）
 DEMO_PYTHON/
 ```
 
-读取控制器参数前需按 vendor 顺序清错并发送（见 `examples/pkg_probe.cpp` 或 `DEMO_C++/showcase_get_set_param_demo.cpp`）：
+`OnClearErr_A/B()` 在 1003 SDK 内部已通过 `OnSetIntPara("RESETx")` 构造并发送事务，
+调用方不要再在外层附加一个空的 `OnSetSend()`。清错后至少等待 200 ms，再读取或设置参数：
 
-`OnLinkTo` → `OnClearSet` → `OnClearErr_A/B` → `OnSetSend` → `OnGetIntPara(...)`
+`OnLinkTo` → `OnClearErr_A/B` → wait ≥ 200 ms → `OnGetIntPara(...)`
 
 仅订阅 UDP 状态（`OnGetBuf`）时可只连接，不保证参数通道可用。
 

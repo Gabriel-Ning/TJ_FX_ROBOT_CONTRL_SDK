@@ -35,8 +35,10 @@ extern "C" {
 	//释放机器人:只要有连接一定要释放,以便别的程序或者用户控制机器人
 	FX_DLL_EXPORT bool OnRelease();
 	//////////////////////////////////////////////////////////////////////
-	//获取SDK大版本号
-	FX_DLL_EXPORT long OnGetSDKVersion();
+		//获取SDK大版本号
+		FX_DLL_EXPORT long OnGetSDKVersion();
+		//获取Linux 1 kHz I/O线程调度与发送统计
+		FX_DLL_EXPORT bool OnGetIoStats(MarvinIoStats* stats);
 	//升级控制器系统,本地升级包路径
 	FX_DLL_EXPORT bool OnUpdateSystem(char* local_path);
 	//下载控制器日志到本地
@@ -214,5 +216,4 @@ extern "C" {
 #endif
 
 #endif
-
 

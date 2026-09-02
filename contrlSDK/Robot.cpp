@@ -1,6 +1,13 @@
 #include "Robot.h"
 #include "stdio.h"
 #include "stdlib.h"
+#include <errno.h>
+#include <limits.h>
+#include <string.h>
+#ifdef CMPL_LIN
+#include <sched.h>
+#include <time.h>
+#endif
 
 
 static CRobot* m_InsRobot = NULL;
@@ -220,8 +227,29 @@ bool CRobot::OnSetChDataB(unsigned char* data_ptr, long size_int, long set_ch)
 
 long CRobot::OnGetSDKVersion()
 {
-    if(m_InsRobot->m_LocalLogTag == true) printf("[Marvin SDK]: SDK version %d\n",SDK_VERSION);
+	if(m_InsRobot->m_LocalLogTag == true) printf("[Marvin SDK]: SDK version %d\n",SDK_VERSION);
 	return SDK_VERSION;
+}
+
+bool CRobot::OnGetIoStats(MarvinIoStats* stats)
+{
+	if (m_InsRobot == NULL || stats == NULL) return false;
+	stats->tick_count = m_InsRobot->m_IoTickCount.load(std::memory_order_relaxed);
+	stats->deadline_miss_count = m_InsRobot->m_IoDeadlineMissCount.load(std::memory_order_relaxed);
+	stats->max_lateness_ns = m_InsRobot->m_IoMaxLatenessNs.load(std::memory_order_relaxed);
+	stats->publish_count = m_InsRobot->m_PublishCount.load(std::memory_order_relaxed);
+	stats->overwrite_count = m_InsRobot->m_OverwriteCount.load(std::memory_order_relaxed);
+	stats->send_attempt_count = m_InsRobot->m_SendAttemptCount.load(std::memory_order_relaxed);
+	stats->send_success_count = m_InsRobot->m_SendSuccessCount.load(std::memory_order_relaxed);
+	stats->send_error_count = m_InsRobot->m_SendErrorCount.load(std::memory_order_relaxed);
+	stats->last_send_errno = m_InsRobot->m_LastSendErrno.load(std::memory_order_relaxed);
+	stats->send_work_total_ns = m_InsRobot->m_SendWorkTotalNs.load(std::memory_order_relaxed);
+	stats->recv_work_total_ns = m_InsRobot->m_RecvWorkTotalNs.load(std::memory_order_relaxed);
+	stats->send_work_max_ns = m_InsRobot->m_SendWorkMaxNs.load(std::memory_order_relaxed);
+	stats->recv_work_max_ns = m_InsRobot->m_RecvWorkMaxNs.load(std::memory_order_relaxed);
+	stats->io_sched_policy = m_InsRobot->m_IoSchedPolicy.load(std::memory_order_relaxed);
+	stats->io_sched_priority = m_InsRobot->m_IoSchedPriority.load(std::memory_order_relaxed);
+	return true;
 }
 
 bool CRobot::OnSendPVT_A(char* local_file, long serial)
@@ -291,32 +319,43 @@ void CALLBACK CallBackFunc2(UINT uTimerID, UINT uMsg, DWORD_PTR dwUser, DWORD_PT
 }
 #endif
 
-#ifdef CMPL_LIN
-long tmpct = 0;
-void  CallBackFunc(union sigval v)
-{
-	m_InsRobot->DoRecv();
-	m_InsRobot->DoSend();
-	tmpct ++;
-	if(tmpct % 1000 == 0)
-	{
-		//if(m_InsRobot->m_LocalLogTag == true) printf("tmpct  = %d\n",tmpct);
-	}
-}
-#endif
-
-
 CRobot::CRobot()
 {
     m_LocalLogTag = true;
 	m_ParaSerial = 1;
 	m_GatherTag = 0;
-	m_SendTag = 0;
+	m_NextPublishSequence = 0;
+	m_IoTickCount = 0;
+	m_IoDeadlineMissCount = 0;
+	m_IoMaxLatenessNs = 0;
+	m_PublishCount = 0;
+	m_OverwriteCount = 0;
+	m_SendAttemptCount = 0;
+	m_SendSuccessCount = 0;
+	m_SendErrorCount = 0;
+	m_LastSendErrno = 0;
+	m_SendWorkTotalNs = 0;
+	m_RecvWorkTotalNs = 0;
+	m_SendWorkMaxNs = 0;
+	m_RecvWorkMaxNs = 0;
+	m_IoSchedPolicy = SCHED_OTHER;
+	m_IoSchedPriority = 0;
+	for (size_t i = 0; i < sizeof(m_IoSendSlots) / sizeof(m_IoSendSlots[0]); ++i)
+	{
+		m_IoSendSlots[i].state.store(IO_SLOT_FREE, std::memory_order_relaxed);
+		m_IoSendSlots[i].sequence.store(0, std::memory_order_relaxed);
+		m_IoSendSlots[i].length = 0;
+	}
 	miss_cnt = 0;
 	old_serial_tag = FX_FALSE;
-#ifdef CMPL_WIN
+	#ifdef CMPL_WIN
 	m_TimeEventID = 0;
-#endif
+	#endif
+	#ifdef CMPL_LIN
+	m_IoThreadRunning = false;
+	m_IoThreadStarted = false;
+	m_RecvThreadStarted = false;
+	#endif
 	memset(&m_DCSS, 0, sizeof(DCSS));
 	m_LastGatherTag = FX_FALSE;
 	m_GatherTag = FX_FALSE;
@@ -345,6 +384,211 @@ CRobot::CRobot()
 
 }
 
+#ifdef CMPL_LIN
+namespace
+{
+const long kIoPeriodNs = 1000000L;
+
+void AddNanoseconds(struct timespec* value, long nanoseconds)
+{
+	value->tv_nsec += nanoseconds;
+	while (value->tv_nsec >= 1000000000L)
+	{
+		value->tv_nsec -= 1000000000L;
+		value->tv_sec += 1;
+	}
+}
+
+int64_t DifferenceNs(const struct timespec& lhs, const struct timespec& rhs)
+{
+	return static_cast<int64_t>(lhs.tv_sec - rhs.tv_sec) * 1000000000LL +
+		static_cast<int64_t>(lhs.tv_nsec - rhs.tv_nsec);
+}
+
+bool ParseLongEnvironment(const char* name, long minimum, long maximum, long* value)
+{
+	const char* text = getenv(name);
+	if (text == NULL || *text == '\0') return false;
+	char* end = NULL;
+	errno = 0;
+	const long parsed = strtol(text, &end, 10);
+	if (errno != 0 || end == text || *end != '\0' || parsed < minimum || parsed > maximum)
+	{
+		return false;
+	}
+	*value = parsed;
+	return true;
+}
+
+void AtomicMax(std::atomic<uint64_t>* target, uint64_t value)
+{
+	uint64_t observed = target->load(std::memory_order_relaxed);
+	while (value > observed && !target->compare_exchange_weak(
+		observed, value, std::memory_order_relaxed)) {}
+}
+}
+
+void CRobot::ConfigureIoThread()
+{
+	long priority = 0;
+	if (ParseLongEnvironment("MARVIN_IO_RT_PRIORITY", 1, 99, &priority))
+	{
+		struct sched_param param;
+		memset(&param, 0, sizeof(param));
+		param.sched_priority = static_cast<int>(priority);
+		const int result = pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+		if (result != 0 && m_LocalLogTag)
+		{
+			fprintf(stderr, "[Marvin SDK]: cannot set I/O SCHED_FIFO priority %ld: %s\n",
+				priority, strerror(result));
+		}
+	}
+
+	long cpu = 0;
+	if (ParseLongEnvironment("MARVIN_IO_CPU", 0, CPU_SETSIZE - 1, &cpu))
+	{
+		cpu_set_t set;
+		CPU_ZERO(&set);
+		CPU_SET(static_cast<int>(cpu), &set);
+		const int result = pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+		if (result != 0 && m_LocalLogTag)
+		{
+			fprintf(stderr, "[Marvin SDK]: cannot pin I/O thread to CPU %ld: %s\n",
+				cpu, strerror(result));
+		}
+	}
+	int policy = SCHED_OTHER;
+	struct sched_param actual;
+	memset(&actual, 0, sizeof(actual));
+	pthread_getschedparam(pthread_self(), &policy, &actual);
+	m_IoSchedPolicy.store(policy, std::memory_order_relaxed);
+	m_IoSchedPriority.store(actual.sched_priority, std::memory_order_relaxed);
+}
+
+void* CRobot::IoThreadEntry(void* arg)
+{
+	CRobot* robot = static_cast<CRobot*>(arg);
+	robot->ConfigureIoThread();
+
+	struct timespec deadline;
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	while (robot->m_IoThreadRunning.load(std::memory_order_acquire))
+	{
+		AddNanoseconds(&deadline, kIoPeriodNs);
+
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		const int64_t already_late_ns = DifferenceNs(now, deadline);
+		if (already_late_ns >= kIoPeriodNs)
+		{
+			const uint64_t skipped = static_cast<uint64_t>(already_late_ns / kIoPeriodNs);
+			robot->m_IoDeadlineMissCount.fetch_add(skipped, std::memory_order_relaxed);
+			for (uint64_t i = 0; i < skipped; ++i) AddNanoseconds(&deadline, kIoPeriodNs);
+		}
+
+		int sleep_result;
+		do
+		{
+			sleep_result = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL);
+		} while (sleep_result == EINTR && robot->m_IoThreadRunning.load(std::memory_order_acquire));
+
+		if (!robot->m_IoThreadRunning.load(std::memory_order_acquire)) break;
+
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		const int64_t lateness_ns = DifferenceNs(now, deadline);
+		if (lateness_ns > 0)
+		{
+			uint64_t observed = robot->m_IoMaxLatenessNs.load(std::memory_order_relaxed);
+			const uint64_t lateness = static_cast<uint64_t>(lateness_ns);
+			while (lateness > observed &&
+				!robot->m_IoMaxLatenessNs.compare_exchange_weak(
+					observed, lateness, std::memory_order_relaxed)) {}
+		}
+
+		robot->m_IoTickCount.fetch_add(1, std::memory_order_relaxed);
+		// Sending first keeps command latency independent of receive backlog.
+		struct timespec work_start, after_send;
+		clock_gettime(CLOCK_MONOTONIC, &work_start);
+		robot->DoSend();
+		clock_gettime(CLOCK_MONOTONIC, &after_send);
+		const uint64_t send_ns = static_cast<uint64_t>(DifferenceNs(after_send, work_start));
+		robot->m_SendWorkTotalNs.fetch_add(send_ns, std::memory_order_relaxed);
+		AtomicMax(&robot->m_SendWorkMaxNs, send_ns);
+	}
+	return NULL;
+}
+
+void* CRobot::RecvThreadEntry(void* arg)
+{
+	CRobot* robot = static_cast<CRobot*>(arg);
+	struct timespec deadline;
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	while (robot->m_IoThreadRunning.load(std::memory_order_acquire))
+	{
+		AddNanoseconds(&deadline, kIoPeriodNs);
+		int result;
+		do { result = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &deadline, NULL); }
+		while (result == EINTR && robot->m_IoThreadRunning.load(std::memory_order_acquire));
+		if (!robot->m_IoThreadRunning.load(std::memory_order_acquire)) break;
+		struct timespec start, finish;
+		clock_gettime(CLOCK_MONOTONIC, &start);
+		robot->DoRecv();
+		clock_gettime(CLOCK_MONOTONIC, &finish);
+		const uint64_t recv_ns = static_cast<uint64_t>(DifferenceNs(finish, start));
+		robot->m_RecvWorkTotalNs.fetch_add(recv_ns, std::memory_order_relaxed);
+		AtomicMax(&robot->m_RecvWorkMaxNs, recv_ns);
+	}
+	return NULL;
+}
+
+bool CRobot::StartIoThread()
+{
+	if (m_IoThreadStarted) return true;
+	m_IoThreadRunning.store(true, std::memory_order_release);
+	const int result = pthread_create(&m_IoThread, NULL, &CRobot::IoThreadEntry, this);
+	if (result != 0)
+	{
+		m_IoThreadRunning.store(false, std::memory_order_release);
+		if (m_LocalLogTag)
+		{
+			fprintf(stderr, "[Marvin SDK]: cannot start I/O thread: %s\n", strerror(result));
+		}
+		return false;
+	}
+	m_IoThreadStarted = true;
+	const int recv_result = pthread_create(&m_RecvThread, NULL, &CRobot::RecvThreadEntry, this);
+	if (recv_result != 0)
+	{
+		m_IoThreadRunning.store(false, std::memory_order_release);
+		pthread_join(m_IoThread, NULL);
+		m_IoThreadStarted = false;
+		if (m_LocalLogTag)
+		{
+			fprintf(stderr, "[Marvin SDK]: cannot start receive thread: %s\n", strerror(recv_result));
+		}
+		return false;
+	}
+	m_RecvThreadStarted = true;
+	return true;
+}
+
+void CRobot::StopIoThread()
+{
+	if (!m_IoThreadStarted) return;
+	m_IoThreadRunning.store(false, std::memory_order_release);
+	pthread_join(m_IoThread, NULL);
+	if (m_RecvThreadStarted)
+	{
+		pthread_join(m_RecvThread, NULL);
+		m_RecvThreadStarted = false;
+	}
+	m_IoThreadStarted = false;
+	// Preserve the historical expectation that a successful OnSetSend directly
+	// before OnRelease is not silently discarded.
+	DoSend();
+}
+#endif
+
 bool CRobot::OnRelease()
 {
 	if (m_InsRobot == NULL)
@@ -355,12 +599,19 @@ bool CRobot::OnRelease()
 	timeKillEvent(m_InsRobot->m_TimeEventID);
 	Sleep(10);
 #endif
-#ifdef CMPL_LIN
-	if(m_InsRobot->m_LinkTag == FX_TRUE){
-		timer_delete(m_InsRobot->robot_timer);
+	#ifdef CMPL_LIN
+	m_InsRobot->StopIoThread();
+	if (m_InsRobot->_local_sock != INVALID_SOCKET)
+	{
+		close(m_InsRobot->_local_sock);
+		m_InsRobot->_local_sock = INVALID_SOCKET;
 	}
-	usleep(10000);
-#endif
+	if (m_InsRobot->_tosock_ != INVALID_SOCKET)
+	{
+		close(m_InsRobot->_tosock_);
+		m_InsRobot->_tosock_ = INVALID_SOCKET;
+	}
+	#endif
 	delete m_InsRobot;
 	m_InsRobot = NULL;
     //if(m_InsRobot->m_LocalLogTag == true) printf("[Marvin SDK]: Robot released\n");
@@ -464,6 +715,23 @@ bool CRobot::OnLinkTo(FX_UCHAR ip1, FX_UCHAR ip2, FX_UCHAR ip3, FX_UCHAR ip4)
 	m_InsRobot->_to.sin_port = htons(4729);
 	m_InsRobot->_to.sin_addr.s_addr = inet_addr(ip_str);
 	m_InsRobot->_tosock_ = socket(AF_INET, SOCK_DGRAM, 0);
+	if (m_InsRobot->_tosock_ == INVALID_SOCKET)
+	{
+		close(m_InsRobot->_local_sock);
+		m_InsRobot->_local_sock = INVALID_SOCKET;
+		return false;
+	}
+#ifdef CMPL_LIN
+	on = 1;
+	if (ioctl(m_InsRobot->_tosock_, FIONBIO, &on) != 0)
+	{
+		close(m_InsRobot->_local_sock);
+		close(m_InsRobot->_tosock_);
+		m_InsRobot->_local_sock = INVALID_SOCKET;
+		m_InsRobot->_tosock_ = INVALID_SOCKET;
+		return false;
+	}
+#endif
 
 	m_InsRobot->m_LinkTag = FX_TRUE;
 //	if(m_InsRobot->m_LocalLogTag == true)
@@ -473,32 +741,17 @@ bool CRobot::OnLinkTo(FX_UCHAR ip1, FX_UCHAR ip2, FX_UCHAR ip3, FX_UCHAR ip4)
 #ifdef CMPL_WIN
 	m_InsRobot->m_TimeEventID = timeSetEvent(1, 1, CallBackFunc2, (DWORD)NULL, TIME_PERIODIC);    //??1ms�䣤���騰?��?
 #endif
-#ifdef CMPL_LIN
+	#ifdef CMPL_LIN
+	if (!m_InsRobot->StartIoThread())
 	{
-		struct sigevent evp;
-		struct itimerspec ts;
-		int ret;
-		memset   (&evp, 0, sizeof(evp));
-		evp.sigev_value.sival_ptr = &m_InsRobot->robot_timer;
-		evp.sigev_notify = SIGEV_THREAD;
-		evp.sigev_notify_function = CallBackFunc;
-		evp.sigev_value.sival_int = 0;  
-		ret = timer_create(CLOCK_REALTIME, &evp, &m_InsRobot->robot_timer);
-		if( ret){
-			return false;
-		}
-	
-		ts.it_interval.tv_sec = 0;
-		ts.it_interval.tv_nsec = 1000000;
-		ts.it_value.tv_sec = 0;
-		ts.it_value.tv_nsec = 1000000;
-		ret = timer_settime(m_InsRobot->robot_timer, TIMER_ABSTIME, &ts, NULL);
-		if( ret )
-		{
-			return false;
-		}
+		m_InsRobot->m_LinkTag = FX_FALSE;
+		close(m_InsRobot->_local_sock);
+		close(m_InsRobot->_tosock_);
+		m_InsRobot->_local_sock = INVALID_SOCKET;
+		m_InsRobot->_tosock_ = INVALID_SOCKET;
+		return false;
 	}
-#endif
+	#endif
 	m_InsRobot->m_RunState = 0;
 
 	m_InsRobot->m_ip1 = ip1;
@@ -1062,14 +1315,64 @@ void CRobot::DoRecv()
 }
 void CRobot::DoSend()
 {
-	if (m_SendTag == 100)
+	IoSendSlot* selected = NULL;
+	uint64_t newest_sequence = 0;
+	for (size_t i = 0; i < sizeof(m_IoSendSlots) / sizeof(m_IoSendSlots[0]); ++i)
 	{
-		int tt = sendto(_tosock_, (char*)m_SendBuf, m_Slen, 0, (struct sockaddr*)&_to, sizeof(_to));
-//		printf("dosend %d\n",m_Slen);
-		m_SendTag = 0;
-		m_Slen = 0;
-
+		IoSendSlot& slot = m_IoSendSlots[i];
+		const uint64_t sequence = slot.sequence.load(std::memory_order_relaxed);
+		if (slot.state.load(std::memory_order_acquire) == IO_SLOT_READY &&
+			(selected == NULL || sequence > newest_sequence))
+		{
+			selected = &slot;
+			newest_sequence = sequence;
+		}
 	}
+	if (selected == NULL) return;
+
+	unsigned char expected = IO_SLOT_READY;
+	if (!selected->state.compare_exchange_strong(
+		expected, IO_SLOT_READING, std::memory_order_acquire, std::memory_order_relaxed)) return;
+
+	// Drop older queued commands. For teleoperation, freshness is more important
+	// than replaying a backlog after a scheduling delay.
+	for (size_t i = 0; i < sizeof(m_IoSendSlots) / sizeof(m_IoSendSlots[0]); ++i)
+	{
+		IoSendSlot& slot = m_IoSendSlots[i];
+		if (&slot == selected) continue;
+		if (slot.state.load(std::memory_order_acquire) == IO_SLOT_READY &&
+			slot.sequence.load(std::memory_order_relaxed) < newest_sequence)
+		{
+			expected = IO_SLOT_READY;
+			if (slot.state.compare_exchange_strong(
+				expected, IO_SLOT_FREE, std::memory_order_release, std::memory_order_relaxed))
+			{
+				m_OverwriteCount.fetch_add(1, std::memory_order_relaxed);
+			}
+		}
+	}
+
+	const long send_length = selected->length;
+	m_SendAttemptCount.fetch_add(1, std::memory_order_relaxed);
+	const int sent = sendto(_tosock_, selected->data, send_length, 0,
+		(struct sockaddr*)&_to, sizeof(_to));
+	if (sent == send_length)
+	{
+		m_SendSuccessCount.fetch_add(1, std::memory_order_relaxed);
+		m_LastSendErrno.store(0, std::memory_order_relaxed);
+	}
+	else
+	{
+		m_SendErrorCount.fetch_add(1, std::memory_order_relaxed);
+		const int send_errno = sent < 0 ? errno : EMSGSIZE;
+		m_LastSendErrno.store(send_errno, std::memory_order_relaxed);
+		if (send_errno == EAGAIN || send_errno == EWOULDBLOCK || send_errno == ENOBUFS)
+		{
+			selected->state.store(IO_SLOT_READY, std::memory_order_release);
+			return;
+		}
+	}
+	selected->state.store(IO_SLOT_FREE, std::memory_order_release);
 }
 
 bool CRobot::OnStopGather()
@@ -1331,11 +1634,8 @@ bool CRobot::OnStartGather(long targetNum, long targetID[35], long recordNum)
 
 bool CRobot::OnClearSet()
 {
-	if (m_InsRobot->m_SendTag == 100)
-	{///////////////
-		return false;
-	}
-	m_InsRobot->m_SendTag = 0;
+	// This is a producer-owned staging buffer. Published frames live in the
+	// independent I/O mailbox, so an outstanding UDP send cannot make staging busy.
 	m_InsRobot->m_SendBuf[0] = 'F';
 	m_InsRobot->m_SendBuf[1] = 'X';
 	m_InsRobot->m_SendBuf[2] = 0;
@@ -2211,11 +2511,38 @@ bool CRobot::OnSetImpType_B(int type)
 
 bool CRobot::OnSetSend()
 {
-	if (m_InsRobot->m_SendTag == 100)
+	if (m_InsRobot == NULL || m_InsRobot->m_Slen <= 0 || m_InsRobot->m_Slen > 1400) return false;
+
+	IoSendSlot* selected = NULL;
+	bool overwriting = false;
+	// Prefer a free slot. If the I/O thread is behind, reclaim a READY (never
+	// READING) slot so publishing remains non-blocking and latest-wins.
+	for (int pass = 0; pass < 2 && selected == NULL; ++pass)
 	{
-		return false;
+		const unsigned char wanted = pass == 0 ? IO_SLOT_FREE : IO_SLOT_READY;
+		for (size_t i = 0; i < sizeof(m_InsRobot->m_IoSendSlots) / sizeof(m_InsRobot->m_IoSendSlots[0]); ++i)
+		{
+			IoSendSlot& slot = m_InsRobot->m_IoSendSlots[i];
+			unsigned char expected = wanted;
+			if (slot.state.compare_exchange_strong(
+				expected, IO_SLOT_WRITING, std::memory_order_acquire, std::memory_order_relaxed))
+			{
+				selected = &slot;
+				overwriting = pass != 0;
+				break;
+			}
+		}
 	}
-	m_InsRobot->m_SendTag = 100;
+	if (selected == NULL) return false;
+
+	memcpy(selected->data, m_InsRobot->m_SendBuf, static_cast<size_t>(m_InsRobot->m_Slen));
+	selected->length = m_InsRobot->m_Slen;
+	selected->sequence.store(m_InsRobot->m_NextPublishSequence.fetch_add(
+		1, std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+	selected->state.store(IO_SLOT_READY, std::memory_order_release);
+	m_InsRobot->m_PublishCount.fetch_add(1, std::memory_order_relaxed);
+	if (overwriting) m_InsRobot->m_OverwriteCount.fetch_add(1, std::memory_order_relaxed);
+	m_InsRobot->m_Slen = 0;
 	if(m_InsRobot->m_LocalLogTag == true) printf("[Marvin SDK]: OnSetSend\n");
 	return true;
 }

@@ -24,6 +24,12 @@ endmacro()
 
 add_marvin_control_example(marvin_validate_link_readonly link_readonly.cpp)
 add_marvin_control_example(marvin_validate_pkg_probe pkg_probe.cpp)
+add_marvin_control_example(marvin_clear_errors clear_errors.cpp)
+add_marvin_control_example(marvin_validate_dump_feedback dump_feedback.cpp)
+add_marvin_control_example(marvin_validate_param_read param_read.cpp)
+add_marvin_control_example(marvin_validate_param_write param_write.cpp)
+add_marvin_control_example(marvin_validate_position_mode_dump position_mode_dump.cpp)
+add_marvin_control_example(marvin_goto_zero goto_zero.cpp)
 
 add_executable(marvin_validate_kine_ccs_m6_40 kine_ccs_m6_40.cpp)
 target_link_libraries(marvin_validate_kine_ccs_m6_40 PRIVATE marvin_kine_validate)

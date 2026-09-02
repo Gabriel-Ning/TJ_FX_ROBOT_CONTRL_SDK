@@ -4,6 +4,11 @@
 #include "FxType.h"
 #include  "ACB.h"
 #include "TCPFileClient.h"
+#include <atomic>
+#include <stdint.h>
+#ifdef CMPL_LIN
+	#include <pthread.h>
+#endif
 #ifdef CMPL_WIN
 	#include <windows.h>
 	//#include <mmiscapi2.h>
@@ -15,6 +20,25 @@
 #endif
 #include "PointSet.h"
 #define    SDK_VERSION   1003
+
+struct MarvinIoStats
+{
+	uint64_t tick_count;
+	uint64_t deadline_miss_count;
+	uint64_t max_lateness_ns;
+	uint64_t publish_count;
+	uint64_t overwrite_count;
+	uint64_t send_attempt_count;
+	uint64_t send_success_count;
+	uint64_t send_error_count;
+	int32_t last_send_errno;
+	uint64_t send_work_total_ns;
+	uint64_t recv_work_total_ns;
+	uint64_t send_work_max_ns;
+	uint64_t recv_work_max_ns;
+	int32_t io_sched_policy;
+	int32_t io_sched_priority;
+};
 
 
 
@@ -39,6 +63,7 @@ public:
 	static bool OnSendPVT_A(char* local_file, long serial);
 	static bool OnSendPVT_B(char* local_file, long serial);
 	static long OnGetSDKVersion();
+	static bool OnGetIoStats(MarvinIoStats* stats);
 	static bool OnSendFile(char* local_file, char* remote_file);
 	static bool OnRecvFile(char* local_file, char* remote_file);
 	static long OnSetIntPara(char paraName[30],long setValue);
@@ -113,7 +138,16 @@ protected:
 #endif
 	FX_BOOL m_LastGatherTag;
 #ifdef CMPL_LIN
-	timer_t robot_timer;
+	static void* IoThreadEntry(void* arg);
+	static void* RecvThreadEntry(void* arg);
+	bool StartIoThread();
+	void StopIoThread();
+	void ConfigureIoThread();
+	pthread_t m_IoThread;
+	pthread_t m_RecvThread;
+	std::atomic<bool> m_IoThreadRunning;
+	bool m_IoThreadStarted;
+	bool m_RecvThreadStarted;
 #endif	
 	DCSS    m_DCSS;
 	DCSS    m_temp_dcss;//win
@@ -135,7 +169,32 @@ protected:
 
 	char m_SendBuf[1400];
 	long m_Slen;
-	long m_SendTag;
+	enum { IO_SLOT_FREE = 0, IO_SLOT_WRITING = 1, IO_SLOT_READY = 2, IO_SLOT_READING = 3 };
+	struct IoSendSlot
+	{
+		std::atomic<unsigned char> state;
+		std::atomic<uint64_t> sequence;
+		long length;
+		char data[1400];
+	};
+	// Extra slots absorb producer/consumer CAS overlap without blocking the controller thread.
+	IoSendSlot m_IoSendSlots[8];
+	std::atomic<uint64_t> m_NextPublishSequence;
+	std::atomic<uint64_t> m_IoTickCount;
+	std::atomic<uint64_t> m_IoDeadlineMissCount;
+	std::atomic<uint64_t> m_IoMaxLatenessNs;
+	std::atomic<uint64_t> m_PublishCount;
+	std::atomic<uint64_t> m_OverwriteCount;
+	std::atomic<uint64_t> m_SendAttemptCount;
+	std::atomic<uint64_t> m_SendSuccessCount;
+	std::atomic<uint64_t> m_SendErrorCount;
+	std::atomic<int32_t> m_LastSendErrno;
+	std::atomic<uint64_t> m_SendWorkTotalNs;
+	std::atomic<uint64_t> m_RecvWorkTotalNs;
+	std::atomic<uint64_t> m_SendWorkMaxNs;
+	std::atomic<uint64_t> m_RecvWorkMaxNs;
+	std::atomic<int32_t> m_IoSchedPolicy;
+	std::atomic<int32_t> m_IoSchedPriority;
 	FX_BOOL SendFile(char* local_file, char* remote_file);
 	FX_BOOL RecvFile(char* local_file, char* remote_file);
 
@@ -155,5 +214,3 @@ protected:
 };
 
 #endif
-
-
